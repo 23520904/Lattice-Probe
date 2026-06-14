@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=70", "wheel"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name = "latticeprobe"
+version = "0.1.0"
+description = "AI-accelerated cryptanalysis framework for lattice-based schemes"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = [
+    "numpy>=2.4.6",
+    "scipy>=1.17.1",
+    "sympy>=1.14.0",
+    "torch>=2.12.0",
+    "torch-geometric>=2.8.0",
+    "transformers>=5.12.0",
+    "einops>=0.8.2",
+    "scikit-learn>=1.9.0",
+    "bootstrap-ci>=0.0.1",
+    "tqdm>=4.68.2",
+    "wandb>=0.27.2",
+    "pynacl>=1.6.2",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]

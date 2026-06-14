@@ -8,11 +8,11 @@ Open-source implementation checklist for the LatticeProbe framework from *"AI-Ac
 
 - [x] Create GitHub repo: `latticeprobe` with MIT license, README, and `.gitignore`
 - [x] Set up Python ≥ 3.10 environment (conda or venv)
-- [ ] Install core deps: `numpy scipy sympy` (ring arithmetic + stats)
-- [ ] Install ML deps: `torch torch-geometric transformers einops`
-- [ ] Install eval deps: `scikit-learn bootstrap-ci tqdm wandb`
-- [ ] Install PRNG: use Python `secrets` module or wrap ChaCha20 via `pynacl`
-- [ ] Write `requirements.txt` and `pyproject.toml` for reproducible installs
+- [x] Install core deps: `numpy scipy sympy` (ring arithmetic + stats)
+- [x] Install ML deps: `torch torch-geometric transformers einops`
+- [x] Install eval deps: `scikit-learn bootstrap-ci tqdm wandb`
+- [x] Install PRNG: use Python `secrets` module or wrap ChaCha20 via `pynacl`
+- [x] Write `requirements.txt` and `pyproject.toml` for reproducible installs
 
 ---
 

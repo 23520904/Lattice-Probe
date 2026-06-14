@@ -1,1 +1,59 @@
-.venv
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+*.egg
+dist/
+build/
+.eggs/
+pip-wheel-metadata/
+*.spec
+
+# Virtual environments
+.venv/
+venv/
+env/
+.conda/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# ML — model artefacts & checkpoints
+checkpoints/
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+
+# Dataset files (can be large; regenerate via data-gen harness)
+data/
+*.npz
+*.npy
+*.hdf5
+*.h5
+
+# Weights & Biases
+wandb/
+
+# Compute log (tracked in git — do not ignore)
+# compute_log.csv
+
+# IDE
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Secrets / keys
+*.pem
+*.key
+secrets.toml
+.env
