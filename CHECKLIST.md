@@ -7,7 +7,7 @@ Open-source implementation checklist for the LatticeProbe framework from *"AI-Ac
 ## Phase 1 — Repo & environment setup
 
 - [x] Create GitHub repo: `latticeprobe` with MIT license, README, and `.gitignore`
-- [ ] Set up Python ≥ 3.10 environment (conda or venv)
+- [x] Set up Python ≥ 3.10 environment (conda or venv)
 - [ ] Install core deps: `numpy scipy sympy` (ring arithmetic + stats)
 - [ ] Install ML deps: `torch torch-geometric transformers einops`
 - [ ] Install eval deps: `scikit-learn bootstrap-ci tqdm wandb`
