@@ -1,8 +1,17 @@
 """
 GraphSAGE-based LWE distinguisher (paper §4.3).
 
-Architecture: 6-layer GraphSAGE backbone, hidden dim 256, ~18M params.
-Binary classifier head. Input: bipartite graph from representations.to_graph().
+Paper spec:
+  - GraphSAGE backbone (Hamilton et al., 2017)
+  - 6 message-passing layers
+  - hidden dim = 256
+  - Readout: global mean pool → Linear(256, 1)
+
+Input:  bipartite graph from representations.to_graph()
+          k·n variable nodes  (normalised a-coefficients)
+          n   equation nodes  (normalised b-coefficients)
+          2·k·n undirected edges weighted by a[r,c]/q
+Output: single binary logit per graph.
 """
 
 import torch

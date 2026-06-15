@@ -23,8 +23,12 @@ To verify the install:
 
 ```bash
 pytest tests/ -q
-# 62 passed
+# 81 passed
 ```
+
+### Google Colab
+
+Open [`notebooks/LatticeProbe_Colab.ipynb`](notebooks/LatticeProbe_Colab.ipynb) directly in Colab for a fully guided run — setup, data generation, training, and evaluation in one notebook.
 
 ---
 
@@ -115,7 +119,7 @@ logit_g = model_g(batch)                       # (1, 1)
 | Hyperparameter | Value |
 |---|---|
 | Layers | 8 |
-| Attention heads | 8 (paper spec: 12; changed because 512 % 12 ≠ 0) |
+| Attention heads | 8 (paper: 12 — using 8 because 512 % 12 ≠ 0; head_dim = 64) |
 | Hidden dim | 512 |
 | FFN dim | 2048 |
 | Dropout | 0.1 |

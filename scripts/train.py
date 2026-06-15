@@ -61,6 +61,8 @@ def parse_args(argv=None):
     p.add_argument("--d-model",    type=int, default=512)
     p.add_argument("--nhead",      type=int, default=8)
     p.add_argument("--num-layers", type=int, default=8)
+    p.add_argument("--ff-dim",     type=int, default=2048,
+                   help="Transformer FFN inner dim (default 4×d_model=2048)")
     # GNN size override
     p.add_argument("--hidden",     type=int, default=256)
     p.add_argument("--gnn-layers", type=int, default=6)
@@ -87,6 +89,7 @@ def build_model(model_name: str, params, device: torch.device, args=None) -> nn.
                 d_model=getattr(args, "d_model", 512),
                 nhead=getattr(args, "nhead", 8),
                 num_layers=getattr(args, "num_layers", 8),
+                dim_feedforward=getattr(args, "ff_dim", 2048),
             )
         return LWETransformer(params, **kwargs).to(device)
     kwargs = {}

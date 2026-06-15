@@ -1,9 +1,15 @@
 """
 Transformer-based LWE distinguisher (paper §4.3).
 
-Architecture: 8-layer encoder, 12 attention heads, hidden dim 512, ~51M params.
-Binary classifier head. Input: integer token sequence of length k*n + n.
-Modular embedding: tokens are integers in [0, q) mapped via nn.Embedding(q, d_model).
+Paper spec:
+  - 8 encoder layers
+  - 12 attention heads  [implemented as 8: 512 % 12 ≠ 0; head_dim = 512/8 = 64]
+  - hidden dim d_model = 512
+  - FFN inner dim = 2048  (4 × d_model, standard ratio)
+  - ~27M parameters
+
+Input:  integer token sequence of length k·n + n (coefficients in [0, q)).
+Output: single binary logit via CLS-token head.
 """
 
 import torch
@@ -15,19 +21,21 @@ from latticeprobe.params import LWEParams
 class LWETransformer(nn.Module):
     """
     Args:
-        params:      LWEParams — determines seq_len = n*(k+1) and vocab size q.
-        d_model:     hidden dimension (default 512).
-        nhead:       attention heads (default 12).
-        num_layers:  encoder layers (default 8).
-        dropout:     dropout probability (default 0.1).
+        params:          LWEParams — sets seq_len = n*(k+1) and vocab size q.
+        d_model:         embedding / hidden dimension  (paper: 512).
+        nhead:           attention heads               (paper: 12 → used 8; 512%8=0).
+        num_layers:      encoder stack depth           (paper: 8).
+        dim_feedforward: FFN inner dimension           (paper: 2048).
+        dropout:         dropout probability           (default 0.1).
     """
 
     def __init__(
         self,
         params: LWEParams,
         d_model: int = 512,
-        nhead: int = 8,        # paper states 12 but 512 is not divisible by 12; 8 gives 64-dim heads
+        nhead: int = 8,
         num_layers: int = 8,
+        dim_feedforward: int = 2048,
         dropout: float = 0.1,
     ):
         super().__init__()
@@ -41,10 +49,10 @@ class LWETransformer(nn.Module):
         encoder_layer = nn.TransformerEncoderLayer(
             d_model=d_model,
             nhead=nhead,
-            dim_feedforward=2048,
+            dim_feedforward=dim_feedforward,
             dropout=dropout,
             batch_first=True,
-            norm_first=True,   # pre-norm (more stable)
+            norm_first=True,
         )
         self.encoder = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
         self.norm = nn.LayerNorm(d_model)
@@ -65,8 +73,8 @@ class LWETransformer(nn.Module):
             logits: float tensor of shape (B, 1), raw binary logit.
         """
         B, L = x.shape
-        positions = torch.arange(L, device=x.device).unsqueeze(0)  # (1, L)
-        h = self.token_embed(x) + self.pos_embed(positions)         # (B, L, d)
-        h = self.encoder(h)                                         # (B, L, d)
-        h = self.norm(h[:, 0])                                      # CLS token: (B, d)
-        return self.head(h)                                         # (B, 1)
+        positions = torch.arange(L, device=x.device).unsqueeze(0)
+        h = self.token_embed(x) + self.pos_embed(positions)   # (B, L, d)
+        h = self.encoder(h)                                    # (B, L, d)
+        h = self.norm(h[:, 0])                                 # CLS token: (B, d)
+        return self.head(h)                                    # (B, 1)

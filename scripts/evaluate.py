@@ -85,6 +85,7 @@ def load_checkpoint(path: str, model_name: str, params, device: torch.device):
             d_model=saved_args.get("d_model", 512),
             nhead=saved_args.get("nhead", 8),
             num_layers=saved_args.get("num_layers", 8),
+            dim_feedforward=saved_args.get("ff_dim", 2048),
         )
     else:
         model = LWEGNN(

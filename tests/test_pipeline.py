@@ -56,6 +56,7 @@ def _make_args(overrides: dict) -> SimpleNamespace:
         d_model=64,
         nhead=4,
         num_layers=2,
+        ff_dim=128,
         hidden=32,
         gnn_layers=2,
     )
