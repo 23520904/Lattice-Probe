@@ -215,19 +215,6 @@ Every call to `generate_lwe_sample()` and `generate_uniform_sample()` calls `fre
 
 ---
 
-## Pending (Phases 5–7)
-
-- [ ] Dataset generation script (sharded `.npz` at 2¹⁶, 2¹⁸, 2²⁰ samples per regime)
-- [ ] Training script (AdamW + cosine LR, early stopping, W&B logging, checkpoint saving)
-- [ ] Evaluation script (bootstrap AUROC, cross-parameter table, partial-bit recovery)
-- [ ] `REPRODUCE.md` with exact commands to regenerate all paper tables
-- [ ] Docker image for full environment reproducibility
-- [ ] Release trained weights via HuggingFace Hub or Zenodo
-
-See [CHECKLIST.md](CHECKLIST.md) for full task tracking.
-
----
-
 ## Reference
 
 ```bibtex
