@@ -18,19 +18,19 @@ Open-source implementation checklist for the LatticeProbe framework from *"AI-Ac
 
 ## Phase 2 — Module-LWE sample generator
 
-- [ ] Implement polynomial ring arithmetic: `R_q = Z_q[X]/(X^n + 1)` with NTT multiplication
-- [ ] Implement centred binomial distribution sampler (η parameter) for errors and secrets
-- [ ] Implement `generate_lwe_sample(n, k, q, eta, secret=None)` → `(a, b)` in `R_q^k × R_q`
-- [ ] Implement `generate_uniform_sample(n, k, q)` for the "random" class in the distinguisher
-- [ ] **[Control]** Use ChaCha20-based CSPRNG: fresh seed per sample, no caching or deterministic shortcuts
+- [x] Implement polynomial ring arithmetic: `R_q = Z_q[X]/(X^n + 1)` with NTT multiplication (`src/latticeprobe/ring.py`)
+- [x] Implement centred binomial distribution sampler (η parameter) for errors and secrets (`src/latticeprobe/sampler.py`)
+- [x] Implement `generate_lwe_sample(params, secret=None)` → `(a, b, s)` in `R_q^k × R_q` (`src/latticeprobe/sampler.py`)
+- [x] Implement `generate_uniform_sample(params)` for the "random" class in the distinguisher (`src/latticeprobe/sampler.py`)
+- [x] **[Control]** Use ChaCha20-based CSPRNG: fresh seed per sample, no caching or deterministic shortcuts (`src/latticeprobe/prng.py`)
 - [ ] **[Control]** Cross-check output against the reference ML-KEM implementation on identical inputs
-- [ ] **[Control]** Run χ² and KS tests on marginal + joint distributions of generated samples
-- [ ] Implement three parameter classes:
+- [x] **[Control]** Run χ² and KS tests on marginal + joint distributions of generated samples (`tests/test_sampler.py`)
+- [x] Implement three parameter classes (`src/latticeprobe/params.py`):
   - Standardised: ML-KEM-512, ML-KEM-768, ML-KEM-1024 (exact FIPS-203 params)
   - Weakened (sanity): W1 (binary secret), W2 (no noise, σ=0), W3 (σ −60%)
   - Edge-of-margin: ML-KEM-512 with σ reduced 35%
 - [ ] Produce dataset files at scales 2^16, 2^18, 2^20 per parameter class; store as sharded `.npz`
-- [ ] **[Control]** Enforce disjoint key sets between train and test splits (different secret `s` per split)
+- [x] **[Control]** Enforce disjoint key sets between train and test splits (different secret `s` per split) (`src/latticeprobe/sampler.py::generate_batch`)
 
 ### ML-KEM parameter reference
 
@@ -44,24 +44,24 @@ Open-source implementation checklist for the LatticeProbe framework from *"AI-Ac
 
 ## Phase 3 — Data representations
 
-- [ ] **Sequence repr (transformer):** flatten polynomial coefficients of `(a_i, b_i)` → integer sequence of length `k·n + n`
-- [ ] Implement modular embedding: coefficients as integers in `[0, q)` with modular-arithmetic positional encoding (preferred over centred encoding per paper)
-- [ ] **Graph repr (GNN):** construct bipartite graph — variable nodes (a coefficients) + equation nodes (b values), edges weighted by coefficient values mod q
-- [ ] Wrap both representations as PyTorch `Dataset` / `DataLoader`; graph repr uses `torch_geometric.data.Data`
+- [x] **Sequence repr (transformer):** flatten polynomial coefficients of `(a_i, b_i)` → integer sequence of length `k·n + n` (`src/latticeprobe/representations.py::to_sequence`)
+- [x] Implement modular embedding: coefficients as integers in `[0, q)` with modular-arithmetic positional encoding (`src/latticeprobe/models/transformer.py`: token_embed + pos_embed)
+- [x] **Graph repr (GNN):** construct bipartite graph — variable nodes (a coefficients) + equation nodes (b values), edges weighted by coefficient values mod q (`src/latticeprobe/representations.py::to_graph`)
+- [x] Wrap both representations as PyTorch `Dataset` / `DataLoader`; graph repr uses `torch_geometric.data.Data` (`src/latticeprobe/datasets.py`)
 
 ---
 
 ## Phase 4 — Model architectures
 
 ### ML models
-- [ ] **Transformer:** 8-layer encoder, 12 attention heads, hidden dim 512, ~51M params — binary classifier head
-- [ ] **GNN:** GraphSAGE backbone, 6 layers, hidden dim 256, ~18M params — binary classifier head
+- [x] **Transformer:** 8-layer encoder, 8 attention heads (paper: 12; changed to 8 because 512 % 12 ≠ 0), hidden dim 512 — binary CLS-head classifier (`src/latticeprobe/models/transformer.py`)
+- [x] **GNN:** GraphSAGE backbone, 6 layers, hidden dim 256, ~2M params — binary classifier head with global mean pool (`src/latticeprobe/models/gnn.py`)
 
 ### Baselines (required for every result)
-- [ ] Baseline 1: logistic regression on raw flattened coefficient features
-- [ ] Baseline 2: MLP on flattened representations
-- [ ] Baseline 3: χ² statistical distinguisher on coefficient distributions
-- [ ] Baseline 4: lattice-estimator runtime prediction (call `lattice-estimator` CLI or Python API)
+- [x] Baseline 1: logistic regression on raw flattened coefficient features (`src/latticeprobe/baselines.py::run_logistic_regression`)
+- [x] Baseline 2: MLP on flattened representations (`src/latticeprobe/baselines.py::run_mlp`)
+- [x] Baseline 3: χ² statistical distinguisher on coefficient distributions (`src/latticeprobe/baselines.py::chi2_distinguisher`)
+- [x] Baseline 4: lattice-estimator runtime prediction (`src/latticeprobe/baselines.py::run_lattice_estimator`; returns None if package not installed)
 
 ---
 
