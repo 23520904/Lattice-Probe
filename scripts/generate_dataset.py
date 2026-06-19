@@ -41,6 +41,12 @@ def parse_args(argv=None):
                    help="Samples per .npz shard file")
     p.add_argument("--output-dir", required=True,
                    help="Directory to write shard_*.npz and secret.npy")
+    p.add_argument("--num-secrets", type=int, default=1,
+                   help="Number of distinct secrets to generate and embed in this dataset")
+    p.add_argument("--secret-file", type=str, default=None,
+                   help="Path to an existing secrets.npy file to reuse (enforces same-key across splits)")
+    p.add_argument("--noise-scale", type=float, default=1.0,
+                   help="Scale multiplier for the noise variance (e.g. 0.90 for 90% noise)")
     p.add_argument("--quiet", action="store_true", help="Suppress progress bar")
     return p.parse_args(argv)
 
@@ -51,6 +57,9 @@ def generate_dataset(
     output_dir: str,
     shard_size: int = 4096,
     quiet: bool = False,
+    noise_scale: float = 1.0,
+    num_secrets: int = 1,
+    secret_file: str | None = None,
 ) -> Path:
     """
     Generate and save a sharded dataset.
@@ -65,9 +74,18 @@ def generate_dataset(
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
 
-    # Draw one fixed secret for all LWE samples in this split.
-    _, _, secret = generate_lwe_sample(params)
-    np.save(out / "secret.npy", secret)
+    if secret_file is not None:
+        secrets = np.load(secret_file)
+        # Ensure it has the 3D shape (N, k, n) expected by sampler
+        if secrets.ndim == 2:
+            secrets = secrets[np.newaxis, ...]
+        np.save(out / "secrets.npy", secrets)
+    else:
+        # Draw the specified number of secrets for this split.
+        from latticeprobe.prng import fresh_rng
+        from latticeprobe.sampler import _sample_secret
+        secrets = np.stack([_sample_secret(params, fresh_rng()) for _ in range(num_secrets)])
+        np.save(out / "secrets.npy", secrets)
 
     generated = 0
     shard_idx = 0
@@ -75,7 +93,7 @@ def generate_dataset(
 
     while generated < n_samples:
         batch = min(shard_size, n_samples - generated)
-        A, B, labels = generate_batch(params, batch, secret=secret)
+        A, B, labels = generate_batch(params, batch, secret=secrets, noise_scale=noise_scale)
         save_shard(str(out / f"shard_{shard_idx:05d}.npz"), A, B, labels)
         generated += batch
         shard_idx += 1
@@ -95,6 +113,9 @@ def main():
         output_dir=args.output_dir,
         shard_size=args.shard_size,
         quiet=args.quiet,
+        noise_scale=args.noise_scale,
+        num_secrets=args.num_secrets,
+        secret_file=args.secret_file,
     )
 
 

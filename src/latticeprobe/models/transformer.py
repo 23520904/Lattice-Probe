@@ -44,7 +44,7 @@ class LWETransformer(nn.Module):
         q = params.q
 
         self.token_embed = nn.Embedding(q, d_model)
-        self.pos_embed   = nn.Embedding(seq_len, d_model)
+        self.pos_embed   = nn.Embedding(seq_len * 2, d_model)  # *2 supports dual domain
 
         encoder_layer = nn.TransformerEncoderLayer(
             d_model=d_model,

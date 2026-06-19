@@ -70,6 +70,10 @@ def parse_args(argv=None):
     p.add_argument("--wandb-project", default="latticeprobe")
     p.add_argument("--compute-log",  default="compute_log.csv",
                    help="CSV file for GPU-hour tracking")
+    p.add_argument("--shuffle-labels", action="store_true",
+                   help="Randomly permute training labels for permutation tests")
+    p.add_argument("--repr", default="coeff", choices=["coeff", "ntt", "dual"],
+                   help="Representation domain of the polynomials")
     return p.parse_args(argv)
 
 
@@ -101,14 +105,14 @@ def build_model(model_name: str, params, device: torch.device, args=None) -> nn.
     return LWEGNN(params, **kwargs).to(device)
 
 
-def build_loader(model_name: str, data_dir: str, params, batch_size: int, shuffle: bool):
+def build_loader(model_name: str, data_dir: str, params, batch_size: int, shuffle: bool, repr_type: str = "coeff"):
     if model_name == "transformer":
-        ds = LWESequenceDataset(data_dir, params)
+        ds = LWESequenceDataset(data_dir, params, repr_type=repr_type)
         return DataLoader(ds, batch_size=batch_size, shuffle=shuffle, num_workers=0,
                           pin_memory=False)
     else:
         from torch_geometric.loader import DataLoader as GeoLoader
-        ds = LWEGraphDataset(data_dir, params)
+        ds = LWEGraphDataset(data_dir, params, repr_type=repr_type)
         return GeoLoader(ds, batch_size=batch_size, shuffle=shuffle, num_workers=0)
 
 
@@ -129,6 +133,7 @@ def run_epoch(
     device: torch.device,
     model_name: str,
     optimizer: AdamW | None = None,
+    shuffle_labels: bool = False,
 ) -> tuple[float, float]:
     """
     Run one train (optimizer≠None) or validation epoch.
@@ -155,6 +160,10 @@ def run_epoch(
                 data   = data.to(device)
                 labels = labels.float().to(device).reshape(-1, 1) # (B,1)
                 logits = model(data)                               # (B,1)
+
+            if training and shuffle_labels:
+                idx = torch.randperm(labels.size(0))
+                labels = labels[idx]
 
             loss = criterion(logits, labels)
 
@@ -205,9 +214,9 @@ def train(args) -> Path:
     print(f"Model : {args.model}  |  params : {n_params:,}  |  device : {device}")
 
     train_loader = build_loader(args.model, args.train_dir, params,
-                                args.batch_size, shuffle=True)
+                                args.batch_size, shuffle=True, repr_type=getattr(args, "repr", "coeff"))
     val_loader   = build_loader(args.model, args.val_dir,   params,
-                                args.batch_size, shuffle=False)
+                                args.batch_size, shuffle=False, repr_type=getattr(args, "repr", "coeff"))
 
     optimizer = AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     scheduler = CosineAnnealingLR(optimizer, T_max=args.epochs, eta_min=1e-6)
@@ -218,7 +227,7 @@ def train(args) -> Path:
 
     for epoch in range(1, args.epochs + 1):
         t0 = time.perf_counter()
-        train_loss, train_auroc = run_epoch(model, train_loader, device, args.model, optimizer)
+        train_loss, train_auroc = run_epoch(model, train_loader, device, args.model, optimizer, getattr(args, "shuffle_labels", False))
         val_loss,   val_auroc   = run_epoch(model, val_loader,   device, args.model, None)
         scheduler.step()
         elapsed = time.perf_counter() - t0

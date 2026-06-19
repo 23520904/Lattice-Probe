@@ -16,7 +16,7 @@ Output: single binary logit per graph.
 
 import torch
 import torch.nn as nn
-from torch_geometric.nn import SAGEConv, global_mean_pool
+from torch_geometric.nn import GATConv, global_mean_pool
 
 from latticeprobe.params import LWEParams
 
@@ -47,7 +47,7 @@ class LWEGNN(nn.Module):
         self.norms = nn.ModuleList()
         for i in range(num_layers):
             in_ch = in_channels if i == 0 else hidden
-            self.convs.append(SAGEConv(in_ch, hidden))
+            self.convs.append(GATConv(in_ch, hidden, edge_dim=1))
             self.norms.append(nn.BatchNorm1d(hidden))
 
         self.drop = nn.Dropout(p=dropout)
@@ -65,10 +65,10 @@ class LWEGNN(nn.Module):
         Returns:
             logits: float tensor of shape (B, 1).
         """
-        x, edge_index, batch = data.x, data.edge_index, data.batch
+        x, edge_index, edge_attr, batch = data.x, data.edge_index, data.edge_attr, data.batch
 
         for conv, norm in zip(self.convs, self.norms):
-            x = conv(x, edge_index)
+            x = conv(x, edge_index, edge_attr)
             x = norm(x)
             x = x.relu()
             x = self.drop(x)

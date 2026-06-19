@@ -31,8 +31,9 @@ class LWESequenceDataset(Dataset):
         params:    LWEParams (provides k, n, q for sequence length).
     """
 
-    def __init__(self, shard_dir: str, params: LWEParams):
+    def __init__(self, shard_dir: str, params: LWEParams, repr_type: str = "coeff"):
         self.params = params
+        self.repr_type = repr_type
         paths = sorted(glob.glob(os.path.join(shard_dir, "shard_*.npz")))
         if not paths:
             raise FileNotFoundError(f"No shard_*.npz files found in {shard_dir}")
@@ -54,7 +55,21 @@ class LWESequenceDataset(Dataset):
         return len(self._labels)
 
     def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor]:
-        tokens = to_sequence(self._a[idx], self._b[idx])
+        a = self._a[idx].copy()
+        b = self._b[idx].copy()
+
+        if self.repr_type == "ntt":
+            from latticeprobe.ring import ntt
+            a = np.stack([ntt(a_row) for a_row in a])
+            b = ntt(b)
+        elif self.repr_type == "dual":
+            from latticeprobe.ring import ntt
+            a_ntt = np.stack([ntt(a_row) for a_row in a])
+            b_ntt = ntt(b)
+            a = np.concatenate([a, a_ntt], axis=-1)
+            b = np.concatenate([b, b_ntt], axis=-1)
+
+        tokens = to_sequence(a, b)
         label  = torch.tensor(self._labels[idx], dtype=torch.float)
         return tokens, label
 
@@ -67,8 +82,9 @@ class LWEGraphDataset(Dataset):
     Use with torch_geometric.loader.DataLoader for correct graph batching.
     """
 
-    def __init__(self, shard_dir: str, params: LWEParams):
+    def __init__(self, shard_dir: str, params: LWEParams, repr_type: str = "coeff"):
         self.params = params
+        self.repr_type = repr_type
         paths = sorted(glob.glob(os.path.join(shard_dir, "shard_*.npz")))
         if not paths:
             raise FileNotFoundError(f"No shard_*.npz files found in {shard_dir}")
@@ -88,12 +104,26 @@ class LWEGraphDataset(Dataset):
         return len(self._labels)
 
     def __getitem__(self, idx: int) -> tuple[Data, torch.Tensor]:
-        graph = to_graph(self._a[idx], self._b[idx], self.params)
+        a = self._a[idx].copy()
+        b = self._b[idx].copy()
+
+        if self.repr_type == "ntt":
+            from latticeprobe.ring import ntt
+            a = np.stack([ntt(a_row) for a_row in a])
+            b = ntt(b)
+        elif self.repr_type == "dual":
+            from latticeprobe.ring import ntt
+            a_ntt = np.stack([ntt(a_row) for a_row in a])
+            b_ntt = ntt(b)
+            a = np.concatenate([a, a_ntt], axis=-1)
+            b = np.concatenate([b, b_ntt], axis=-1)
+
+        graph = to_graph(a, b, self.params)
         graph.y = torch.tensor([self._labels[idx]], dtype=torch.float)
         return graph, graph.y
 
 
 def save_shard(path: str, a: np.ndarray, b: np.ndarray, labels: np.ndarray) -> None:
     """Save one dataset shard to a .npz file."""
-    np.savez_compressed(path, a=a.astype(np.float32),
-                        b=b.astype(np.float32), label=labels.astype(np.int8))
+    np.savez_compressed(path, a=a.astype(np.int16),
+                        b=b.astype(np.int16), label=labels.astype(np.int8))

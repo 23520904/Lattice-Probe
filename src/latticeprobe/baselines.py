@@ -162,20 +162,48 @@ def bootstrap_auroc(
     seed: int = 0,
 ) -> tuple[float, float, float]:
     """
-    95% bootstrap confidence interval for AUROC over `n_boot` resamples.
+    95% BCa bootstrap confidence interval for AUROC.
 
     Returns:
         (mean_auroc, lower_bound, upper_bound)
     """
-    rng = np.random.default_rng(seed)
-    aucs = []
-    n = len(y_true)
-    for _ in range(n_boot):
-        idx = rng.integers(0, n, size=n)
-        yt, ys = y_true[idx], y_score[idx]
-        if len(np.unique(yt)) < 2:
-            continue
-        aucs.append(roc_auc_score(yt, ys))
-    aucs = np.array(aucs)
-    alpha = (1 - ci) / 2
-    return float(aucs.mean()), float(np.percentile(aucs, alpha * 100)), float(np.percentile(aucs, (1 - alpha) * 100))
+    def _auc(yt, ys, axis=-1):
+        if yt.ndim == 1:
+            if len(np.unique(yt)) < 2: return 0.5
+            return roc_auc_score(yt, ys)
+        else:
+            # 2D case from scipy.stats.bootstrap
+            res = []
+            for i in range(yt.shape[0] if axis == 1 else yt.shape[1]):
+                y_t = yt[i] if axis == 1 else yt[:, i]
+                y_s = ys[i] if axis == 1 else ys[:, i]
+                if len(np.unique(y_t)) < 2: res.append(0.5)
+                else: res.append(roc_auc_score(y_t, y_s))
+            return np.array(res)
+
+    mean_auc = _auc(y_true, y_score)
+    try:
+        res = stats.bootstrap(
+            (y_true, y_score),
+            statistic=_auc,
+            n_resamples=n_boot,
+            confidence_level=ci,
+            method='bca',
+            paired=True,
+            random_state=seed,
+        )
+        return float(mean_auc), float(res.confidence_interval.low), float(res.confidence_interval.high)
+    except Exception as e:
+        print(f"  [BCa failed: {e}. Falling back to percentile.]")
+        rng = np.random.default_rng(seed)
+        aucs = []
+        n = len(y_true)
+        for _ in range(n_boot):
+            idx = rng.integers(0, n, size=n)
+            yt, ys = y_true[idx], y_score[idx]
+            if len(np.unique(yt)) < 2:
+                continue
+            aucs.append(roc_auc_score(yt, ys))
+        aucs = np.array(aucs)
+        alpha = (1 - ci) / 2
+        return float(mean_auc), float(np.percentile(aucs, alpha * 100)), float(np.percentile(aucs, (1 - alpha) * 100))

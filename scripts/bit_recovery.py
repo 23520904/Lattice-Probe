@@ -39,35 +39,37 @@ def parse_args(argv=None):
         description="Partial secret-bit recovery experiment.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    p.add_argument("--train-dir", required=True)
-    p.add_argument("--test-dir",  required=True)
     p.add_argument("--param-set", required=True, choices=list(PARAMS))
+    p.add_argument("--n-train", type=int, default=10000, help="Number of training samples")
+    p.add_argument("--n-test", type=int, default=2000, help="Number of testing samples")
     p.add_argument("--bit-range", default=None,
                    help="Python slice notation for bit positions to test, e.g. 0:64")
     p.add_argument("--output-json", default=None)
+    # Ignored arguments retained for backwards compatibility
+    p.add_argument("--train-dir", default=None)
+    p.add_argument("--test-dir",  default=None)
     return p.parse_args(argv)
 
 
-def _load_arrays(data_dir: str, params):
-    """Load a, b, labels from all shards; use only LWE samples (label=1)."""
-    ds = LWESequenceDataset(data_dir, params)
-    mask = ds._labels == 1
-    A = ds._a[mask].astype(np.float32) / params.q   # (N, k, n), normalised
-    B = ds._b[mask].astype(np.float32) / params.q   # (N, n)
-    return A, B
-
-
-def _load_secret(data_dir: str) -> np.ndarray | None:
-    secret_path = Path(data_dir) / "secret.npy"
-    if not secret_path.exists():
-        return None
-    return np.load(secret_path)   # (k, n)
+def generate_fresh_lwe_samples(params, n_samples):
+    from latticeprobe.sampler import generate_lwe_sample
+    A = np.empty((n_samples, params.k, params.n), dtype=np.float32)
+    B = np.empty((n_samples, params.n), dtype=np.float32)
+    S = np.empty((n_samples, params.k, params.n), dtype=np.int64)
+    for i in range(n_samples):
+        a, b, s = generate_lwe_sample(params)
+        A[i] = a
+        B[i] = b
+        S[i] = s
+    A /= params.q
+    B /= params.q
+    return A, B, S
 
 
 def recover_bits(
-    train_dir: str,
-    test_dir: str,
     param_set: str,
+    n_train: int = 10000,
+    n_test: int = 2000,
     bit_range: str | None = None,
 ) -> dict:
     """
@@ -78,29 +80,22 @@ def recover_bits(
     """
     params = get_params(param_set)
 
-    # Load secrets
-    s_train = _load_secret(train_dir)
-    s_test  = _load_secret(test_dir)
-    if s_train is None or s_test is None:
-        print("secret.npy not found — re-generate dataset with generate_dataset.py "
-              "(it saves the secret automatically).")
-        return {"error": "secret.npy missing"}
-
-    # Load features
-    A_train, B_train = _load_arrays(train_dir, params)
-    A_test,  B_test  = _load_arrays(test_dir,  params)
+    # Load features and secrets by generating fresh samples
+    print("Generating fresh samples with varying secrets...")
+    A_train, B_train, S_train = generate_fresh_lwe_samples(params, n_train)
+    A_test,  B_test,  S_test  = generate_fresh_lwe_samples(params, n_test)
 
     # Flatten (a, b) as feature vector
-    X_train = np.concatenate([A_train.reshape(len(A_train), -1),
-                               B_train.reshape(len(B_train), -1)], axis=1)
-    X_test  = np.concatenate([A_test.reshape(len(A_test),  -1),
-                               B_test.reshape(len(B_test),  -1)], axis=1)
+    X_train = np.concatenate([A_train.reshape(n_train, -1),
+                               B_train.reshape(n_train, -1)], axis=1)
+    X_test  = np.concatenate([A_test.reshape(n_test,  -1),
+                               B_test.reshape(n_test,  -1)], axis=1)
 
     # Bit positions to test
     k, n = params.k, params.n
     total_bits = k * n
-    bits_flat_train = s_train.reshape(-1)   # (k*n,)
-    bits_flat_test  = s_test.reshape(-1)    # (k*n,)
+    bits_flat_train = S_train.reshape(n_train, -1)   # (n_train, k*n)
+    bits_flat_test  = S_test.reshape(n_test, -1)     # (n_test, k*n)
 
     if bit_range is not None:
         parts = bit_range.split(":")
@@ -116,8 +111,8 @@ def recover_bits(
 
     per_bit_acc: list[float] = []
     for i in bit_positions:
-        y_train_bit = (bits_flat_train[i] > 0).astype(int)
-        y_test_bit  = (bits_flat_test[i]  > 0).astype(int)
+        y_train_bit = (bits_flat_train[:, i] > 0).astype(int)
+        y_test_bit  = (bits_flat_test[:, i]  > 0).astype(int)
 
         # Skip if constant (trivial)
         if y_train_bit.std() == 0 or len(np.unique(y_train_bit)) < 2:
@@ -150,9 +145,9 @@ def recover_bits(
 def main():
     args = parse_args()
     results = recover_bits(
-        train_dir=args.train_dir,
-        test_dir=args.test_dir,
         param_set=args.param_set,
+        n_train=args.n_train,
+        n_test=args.n_test,
         bit_range=args.bit_range,
     )
     if args.output_json:

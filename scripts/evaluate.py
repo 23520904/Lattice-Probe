@@ -65,6 +65,10 @@ def parse_args(argv=None):
     p.add_argument("--device",     default="auto")
     p.add_argument("--output-json", default=None,
                    help="Write full results to a JSON file")
+    p.add_argument("--shuffle-labels", action="store_true",
+                   help="Permute labels to verify artifact immunity")
+    p.add_argument("--repr", default="coeff", choices=["coeff", "ntt", "dual"],
+                   help="Representation domain of the polynomials")
     return p.parse_args(argv)
 
 
@@ -98,13 +102,13 @@ def load_checkpoint(path: str, model_name: str, params, device: torch.device):
     return model, ckpt.get("epoch"), ckpt.get("val_auroc")
 
 
-def _build_loader(model_name: str, data_dir: str, params, batch_size: int):
+def _build_loader(model_name: str, data_dir: str, params, batch_size: int, repr_type: str = "coeff"):
     if model_name == "transformer":
-        ds = LWESequenceDataset(data_dir, params)
+        ds = LWESequenceDataset(data_dir, params, repr_type=repr_type)
         return DataLoader(ds, batch_size=batch_size, shuffle=False, num_workers=0), ds
     else:
         from torch_geometric.loader import DataLoader as GeoLoader
-        ds = LWEGraphDataset(data_dir, params)
+        ds = LWEGraphDataset(data_dir, params, repr_type=repr_type)
         return GeoLoader(ds, batch_size=batch_size, shuffle=False, num_workers=0), ds
 
 
@@ -126,8 +130,11 @@ def _inference(model: torch.nn.Module, loader, device: torch.device,
     return np.concatenate(all_logits), np.concatenate(all_labels)
 
 
-def _print_auroc(label: str, mean: float, lo: float, hi: float) -> None:
-    print(f"  {label:<30s} AUROC = {mean:.4f}  95% CI [{lo:.4f}, {hi:.4f}]")
+def _print_metrics(label: str, mean: float, lo: float, hi: float) -> None:
+    adv = 2 * mean - 1
+    adv_lo = 2 * lo - 1
+    adv_hi = 2 * hi - 1
+    print(f"  {label:<25s} AUROC = {mean:.4f} | Advantage = {adv:.4f} CI [{adv_lo:.4f}, {adv_hi:.4f}]")
 
 
 # ── Evaluation functions ──────────────────────────────────────────────────────
@@ -141,6 +148,8 @@ def evaluate_model(
     batch_size: int = 256,
     n_boot: int = 100,
     device_arg: str = "auto",
+    shuffle_labels: bool = False,
+    repr_type: str = "coeff",
 ) -> dict:
     """
     Full evaluation run. Returns a results dict.
@@ -154,24 +163,46 @@ def evaluate_model(
     print(f"  epoch={ckpt_epoch}  ckpt_val_auroc={ckpt_val_auroc}")
 
     # Inference
-    test_loader, test_ds = _build_loader(model_name, test_dir, params, batch_size)
+    test_loader, test_ds = _build_loader(model_name, test_dir, params, batch_size, repr_type=repr_type)
     logits, labels = _inference(model, test_loader, device, model_name)
 
+    if shuffle_labels:
+        print("  [EVAL] Shuffling labels for permutation testing...")
+        np.random.shuffle(labels)
+
+    # Logit Separation and Cohen's d
+    lwe_logits = logits[labels == 1]
+    unif_logits = logits[labels == 0]
+    logit_sep = float(np.mean(lwe_logits) - np.mean(unif_logits)) if len(lwe_logits) and len(unif_logits) else 0.0
+    
+    n1, n2 = len(lwe_logits), len(unif_logits)
+    v1 = np.var(lwe_logits, ddof=1) if n1 > 1 else 0.0
+    v2 = np.var(unif_logits, ddof=1) if n2 > 1 else 0.0
+    pooled_std = np.sqrt(((n1 - 1) * v1 + (n2 - 1) * v2) / (n1 + n2 - 2)) if n1 + n2 > 2 else 1e-9
+    cohens_d = logit_sep / pooled_std
+
     mean, lo, hi = bootstrap_auroc(labels, logits, n_boot=n_boot)
+    adv = 2 * mean - 1
     results: dict = {
         "param_set": param_set,
         "model": model_name,
         "checkpoint": checkpoint,
         "n_test": int(len(labels)),
         "model_auroc": float(mean),
-        "model_auroc_ci_lo": float(lo),
-        "model_auroc_ci_hi": float(hi),
+        "model_advantage": float(adv),
+        "model_advantage_ci_lo": float(2 * lo - 1),
+        "model_advantage_ci_hi": float(2 * hi - 1),
+        "logit_separation": logit_sep,
+        "cohens_d": cohens_d,
     }
 
-    print(f"\n{'='*55}")
+    print(f"\n{'='*65}")
     print(f"Param set : {param_set}   Model : {model_name}   N_test : {len(labels):,}")
-    print(f"{'='*55}")
-    _print_auroc(f"{model_name} (ours)", mean, lo, hi)
+    if shuffle_labels:
+        print(f"*** PERMUTATION TEST: Labels shuffled ***")
+    print(f"Logit Sep : {logit_sep:.4f}   Cohen's d : {cohens_d:.4f}")
+    print(f"{'='*65}")
+    _print_metrics(f"{model_name} (ours)", mean, lo, hi)
 
     # χ² baseline (no train data needed)
     A_test = test_ds._a.astype(np.float32)
@@ -187,15 +218,18 @@ def evaluate_model(
             np.abs(B_lwe.astype(float)  % params.q - params.q / 2).mean(axis=-1),
         ])
         cm, clo, chi = bootstrap_auroc(y_chi2, scores_chi2, n_boot=n_boot)
-        _print_auroc("χ² statistical", cm, clo, chi)
-        results.update({"chi2_auroc": float(cm), "chi2_ci_lo": float(clo), "chi2_ci_hi": float(chi)})
+        _print_metrics("χ² statistical", cm, clo, chi)
+        results.update({"chi2_auroc": float(cm), "chi2_adv": 2*float(cm)-1})
 
     # Supervised baselines (need train data)
     if train_dir is not None:
-        _, train_ds = _build_loader(model_name, train_dir, params, batch_size)
+        _, train_ds = _build_loader(model_name, train_dir, params, batch_size, repr_type=repr_type)
         A_train = train_ds._a.astype(np.float32)
         B_train = train_ds._b.astype(np.float32)
         y_train = train_ds._labels.astype(int)
+        
+        if shuffle_labels:
+            np.random.shuffle(y_train)
 
         try:
             lr_res = run_logistic_regression(A_train, B_train, y_train,
@@ -206,8 +240,8 @@ def evaluate_model(
                                     B_test.reshape(len(B_test), -1)], axis=1)
                 )[:, 1], n_boot=n_boot,
             )
-            _print_auroc("Logistic regression", lm, llo, lhi)
-            results.update({"lr_auroc": float(lm), "lr_ci_lo": float(llo), "lr_ci_hi": float(lhi)})
+            _print_metrics("Logistic regression", lm, llo, lhi)
+            results.update({"lr_auroc": float(lm), "lr_adv": 2*float(lm)-1})
         except Exception as exc:
             print(f"  [LR baseline failed: {exc}]")
 
@@ -219,8 +253,8 @@ def evaluate_model(
                                     B_test.reshape(len(B_test), -1)], axis=1)
                 )[:, 1], n_boot=n_boot,
             )
-            _print_auroc("MLP", mm, mlo, mhi)
-            results.update({"mlp_auroc": float(mm), "mlp_ci_lo": float(mlo), "mlp_ci_hi": float(mhi)})
+            _print_metrics("MLP", mm, mlo, mhi)
+            results.update({"mlp_auroc": float(mm), "mlp_adv": 2*float(mm)-1})
         except Exception as exc:
             print(f"  [MLP baseline failed: {exc}]")
 
@@ -239,6 +273,8 @@ def main():
         batch_size=args.batch_size,
         n_boot=args.n_boot,
         device_arg=args.device,
+        shuffle_labels=args.shuffle_labels,
+        repr_type=args.repr,
     )
     if args.output_json:
         out = Path(args.output_json)

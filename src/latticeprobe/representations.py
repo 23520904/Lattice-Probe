@@ -32,35 +32,20 @@ def to_sequence(a: np.ndarray, b: np.ndarray) -> torch.Tensor:
 def to_graph(a: np.ndarray, b: np.ndarray, params: LWEParams) -> Data:
     """
     Build a bipartite graph from one LWE sample (paper §4.2.2).
-
-    Nodes:
-      - Variable nodes [0 .. k*n-1]: one per coefficient of a, indexed (r*n + c)
-      - Equation nodes [k*n .. k*n+n-1]: one per coefficient of b
-
-    Edges: variable node (r*n + c) ↔ equation node (k*n + c)
-    Edge weight: a[r, c] / q  (normalised to [0, 1))
-
-    Node features (1-d): coefficient value / q.
-
-    Args:
-        a:      shape (k, n), coefficients in [0, q)
-        b:      shape (n,),   coefficients in [0, q)
-        params: LWEParams (provides k, n, q)
-    Returns:
-        torch_geometric Data object
     """
-    k, n, q = params.k, params.n, params.q
+    k, n_actual = a.shape
+    q = params.q
 
     # Node features
     x_var = torch.tensor(a.reshape(-1) / q, dtype=torch.float).unsqueeze(1)  # (k*n, 1)
     x_eq  = torch.tensor(b / q,             dtype=torch.float).unsqueeze(1)  # (n, 1)
     x = torch.cat([x_var, x_eq], dim=0)                                       # (k*n+n, 1)
 
-    # Edges: for each r in [k], c in [n]: variable (r*n+c) <-> equation (k*n+c)
-    r_idx = np.repeat(np.arange(k), n)           # (k*n,)
-    c_idx = np.tile(np.arange(n), k)             # (k*n,)
-    var_nodes = r_idx * n + c_idx                # (k*n,)
-    eq_nodes  = k * n + c_idx                    # (k*n,)
+    # Edges: for each r in [k], c in [n_actual]: variable (r*n+c) <-> equation (k*n+c)
+    r_idx = np.repeat(np.arange(k), n_actual)           # (k*n,)
+    c_idx = np.tile(np.arange(n_actual), k)             # (k*n,)
+    var_nodes = r_idx * n_actual + c_idx                # (k*n,)
+    eq_nodes  = k * n_actual + c_idx                    # (k*n,)
 
     # Undirected: add both directions
     src = np.concatenate([var_nodes, eq_nodes])

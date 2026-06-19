@@ -14,7 +14,7 @@ class LWEParams:
     noise: Literal["cbd", "gaussian", "zero"]
     eta: int = 0               # CBD parameter (used when noise="cbd")
     sigma: float = 0.0         # Gaussian σ  (used when noise="gaussian")
-    secret: Literal["cbd", "binary"] = "cbd"  # secret distribution
+    secret: Literal["cbd", "binary", "ternary", "uniform"] = "cbd"  # secret distribution
 
 
 PARAMS: dict[str, LWEParams] = {
@@ -40,6 +40,31 @@ PARAMS: dict[str, LWEParams] = {
     # W3: σ reduced 60% below ML-KEM-512 baseline (σ_512 ≈ 1.225 → 0.490)
     "W3": LWEParams(
         name="W3", n=256, k=2, q=3329, noise="gaussian", sigma=0.490,
+    ),
+    # ── CBD vs Gaussian Universality (Tier A) ─────────────────────────────────
+    "CBD-eta2": LWEParams(
+        name="CBD-eta2", n=256, k=2, q=3329, noise="cbd", eta=2,
+    ),
+    "CBD-eta3": LWEParams(
+        name="CBD-eta3", n=256, k=2, q=3329, noise="cbd", eta=3,
+    ),
+    "Gauss-var1.0": LWEParams(
+        name="Gauss-var1.0", n=256, k=2, q=3329, noise="gaussian", sigma=1.0,
+    ),
+    "Gauss-var1.5": LWEParams(
+        name="Gauss-var1.5", n=256, k=2, q=3329, noise="gaussian", sigma=1.22474487,
+    ),
+    # ── Edge-of-margin ────────────────────────────────────────────────────────
+    # σ reduced 35% below ML-KEM-512 (1.225 × 0.65 ≈ 0.796)
+    # ── Secret Distribution Robustness (Tier B) ───────────────────────────────
+    "Sec-Binary": LWEParams(
+        name="Sec-Binary", n=256, k=2, q=3329, noise="cbd", eta=3, secret="binary",
+    ),
+    "Sec-Ternary": LWEParams(
+        name="Sec-Ternary", n=256, k=2, q=3329, noise="cbd", eta=3, secret="ternary",
+    ),
+    "Sec-Uniform": LWEParams(
+        name="Sec-Uniform", n=256, k=2, q=3329, noise="cbd", eta=3, secret="uniform",
     ),
     # ── Edge-of-margin ────────────────────────────────────────────────────────
     # σ reduced 35% below ML-KEM-512 (1.225 × 0.65 ≈ 0.796)
