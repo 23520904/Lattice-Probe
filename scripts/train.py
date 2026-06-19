@@ -20,19 +20,8 @@ import sys
 import time
 from pathlib import Path
 
-import numpy as np
-import torch
-import torch.nn as nn
-from sklearn.metrics import roc_auc_score
-from torch.optim import AdamW
-from torch.optim.lr_scheduler import CosineAnnealingLR
-from torch.utils.data import DataLoader
-
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from latticeprobe.datasets import LWEGraphDataset, LWESequenceDataset
-from latticeprobe.models.gnn import LWEGNN
-from latticeprobe.models.transformer import LWETransformer
 from latticeprobe.params import PARAMS, get_params
 
 
@@ -290,9 +279,23 @@ def train(args) -> Path:
     return best_ckpt
 
 
-def main():
-    train(parse_args())
-
-
 if __name__ == "__main__":
-    main()
+    args = parse_args()
+    
+    # Delayed imports to allow `--help` to run instantly
+    import numpy as np
+    import torch
+    import torch.nn as nn
+    from sklearn.metrics import roc_auc_score
+    from torch.optim import AdamW
+    from torch.optim.lr_scheduler import CosineAnnealingLR
+    from torch.utils.data import DataLoader
+
+    from latticeprobe.datasets import LWEGraphDataset, LWESequenceDataset
+    from latticeprobe.models.gnn import LWEGNN
+    from latticeprobe.models.transformer import LWETransformer
+
+    # Inject into global namespace for functions to use
+    globals().update(locals())
+
+    train(args)

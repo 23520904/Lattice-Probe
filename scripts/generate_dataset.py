@@ -23,9 +23,7 @@ from tqdm import tqdm
 # Allow running as a script from any working directory.
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from latticeprobe.datasets import save_shard
 from latticeprobe.params import PARAMS, get_params
-from latticeprobe.sampler import generate_batch, generate_lwe_sample
 
 
 def parse_args(argv=None):
@@ -46,7 +44,7 @@ def parse_args(argv=None):
     p.add_argument("--secret-file", type=str, default=None,
                    help="Path to an existing secrets.npy file to reuse (enforces same-key across splits)")
     p.add_argument("--noise-scale", type=float, default=1.0,
-                   help="Scale multiplier for the noise variance (e.g. 0.90 for 90% noise)")
+                   help="Scale multiplier for the noise variance (e.g. 0.90 for 90 percent noise)")
     p.add_argument("--quiet", action="store_true", help="Suppress progress bar")
     return p.parse_args(argv)
 
@@ -86,6 +84,9 @@ def generate_dataset(
         from latticeprobe.sampler import _sample_secret
         secrets = np.stack([_sample_secret(params, fresh_rng()) for _ in range(num_secrets)])
         np.save(out / "secrets.npy", secrets)
+
+    from latticeprobe.datasets import save_shard
+    from latticeprobe.sampler import generate_batch
 
     generated = 0
     shard_idx = 0

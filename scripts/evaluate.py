@@ -26,21 +26,8 @@ import sys
 from pathlib import Path
 from typing import Optional
 
-import numpy as np
-import torch
-from torch.utils.data import DataLoader
-
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from latticeprobe.baselines import (
-    bootstrap_auroc,
-    chi2_distinguisher,
-    run_logistic_regression,
-    run_mlp,
-)
-from latticeprobe.datasets import LWEGraphDataset, LWESequenceDataset
-from latticeprobe.models.gnn import LWEGNN
-from latticeprobe.models.transformer import LWETransformer
 from latticeprobe.params import PARAMS, get_params
 
 
@@ -262,8 +249,23 @@ def evaluate_model(
     return results
 
 
-def main():
+if __name__ == "__main__":
     args = parse_args()
+
+    # Delayed imports to allow `--help` to run instantly
+    import numpy as np
+    import torch
+    from torch.utils.data import DataLoader
+    from latticeprobe.baselines import (
+        bootstrap_auroc,
+        chi2_distinguisher,
+        run_logistic_regression,
+        run_mlp,
+    )
+    from latticeprobe.datasets import LWEGraphDataset, LWESequenceDataset
+    from latticeprobe.models.gnn import LWEGNN
+    from latticeprobe.models.transformer import LWETransformer
+
     results = evaluate_model(
         checkpoint=args.checkpoint,
         model_name=args.model,
@@ -281,7 +283,3 @@ def main():
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(json.dumps(results, indent=2))
         print(f"Results written to {out}")
-
-
-if __name__ == "__main__":
-    main()
