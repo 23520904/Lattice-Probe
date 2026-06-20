@@ -71,11 +71,17 @@ class TestTransformer:
         assert not torch.isnan(logits).any()
 
     def test_param_count_approx(self, params_512):
-        """Model should be in the tens-of-millions range (nhead=8, d_model=512, 8 layers)."""
+        """
+        d_model=512, nhead=8, 8 layers, ff=2048. Expected ~27,936,257.
+        Paper claims ~51M — PAPER INCONSISTENCY (see transformer.py docstring).
+        Accept ±5% of 27,936,257.
+        """
         model = LWETransformer(params_512)
         n_params = sum(p.numel() for p in model.parameters())
-        assert 10_000_000 < n_params < 70_000_000, (
-            f"Unexpected param count: {n_params:,}"
+        expected = 27_936_257
+        assert abs(n_params - expected) / expected < 0.05, (
+            f"Transformer param count {n_params:,} deviates >5% from expected {expected:,}. "
+            "Architecture may have changed. Paper claims ~51M — PAPER INCONSISTENCY."
         )
 
     def test_gradients_flow(self, params_512):
@@ -111,12 +117,18 @@ class TestGNN:
         assert not torch.isnan(logits).any()
 
     def test_param_count_approx(self, params_512):
-        """Model should be in the ~18M range (within 30%)."""
+        """
+        SAGEConv(1→256)×1 + SAGEConv(256→256)×5 + BatchNorm×6 + Linear(256,1).
+        Expected ~662,273. Paper claims 18M — PAPER INCONSISTENCY (see gnn.py docstring).
+        Accept ±5% of 662,273.
+        """
         model = LWEGNN(params_512)
         n_params = sum(p.numel() for p in model.parameters())
-        # SAGEConv(1, 256) + 5× SAGEConv(256,256) + BN + head = realistic ~2M
-        # The paper's 18M count is for a larger feature space; accept a wider range
-        assert n_params > 100_000, f"Model suspiciously small: {n_params:,} params"
+        expected = 662_273
+        assert abs(n_params - expected) / expected < 0.05, (
+            f"GNN param count {n_params:,} deviates >5% from expected {expected:,}. "
+            "Architecture may have changed. Paper claims 18M — PAPER INCONSISTENCY."
+        )
 
     def test_gradients_flow(self, params_512):
         model = LWEGNN(params_512)

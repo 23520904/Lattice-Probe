@@ -1,243 +1,304 @@
-# Lattice-Probe Audit: Secret Handling Verification
+You are acting as a senior cryptography research engineer and reproducibility auditor.
 
-I need a code-level audit of dataset generation and secret management.
+Project: LatticeProbe
 
-This is NOT a request for opinions.
+Your task is to perform a FULL IMPLEMENTATION AUDIT against the specification below and modify the codebase so that it is internally consistent, paper-consistent wherever possible, and fully reproducible.
 
-Inspect the actual implementation and determine exactly how secrets are generated, stored, and reused.
+IMPORTANT:
 
----
+* The specification below is the source of truth.
+* Do NOT blindly follow the paper when the paper is mathematically inconsistent.
+* When the paper is self-contradictory, preserve the mathematically valid implementation and document the inconsistency.
+* Produce code changes, not commentary.
+* Update docstrings, comments, notebooks, checkpoints metadata, and configuration defaults where required.
+* At the end generate a REPORT.md summarizing every modification and whether it was:
 
-# Background
+  * FIXED
+  * DOCUMENTED
+  * PAPER INCONSISTENCY
+  * OPEN ISSUE
 
-The CLI extraction indicates:
+========================================
+AUDIT REQUIREMENTS
+==================
 
-```bash
-python scripts/generate_dataset.py \
-  --param-set ML-KEM-512 \
-  --output-dir data/train
-```
+1. VERIFY GNN IMPLEMENTATION
 
-creates:
+Expected architecture:
 
-```text
-shard_*.npz
-secret.npy
-```
+* GraphSAGE backbone
+* SAGEConv
+* hidden_dim=256
+* num_layers=6
+* BatchNorm after each layer
+* ReLU
+* Dropout(0.1)
+* global_mean_pool
+* Linear(hidden,1)
 
-inside the output directory.
+Required actions:
 
-This raises a critical scientific concern:
+* Ensure NO GATConv remains anywhere.
 
-If train, validation, and test datasets are generated independently, they may all contain different secrets.
+* Ensure no attention-specific logic remains.
 
-Example:
+* Ensure edge_attr is not passed into SAGEConv.
 
-```text
-data/train/secret.npy
-data/val/secret.npy
-data/test/secret.npy
-```
+* Remove dead code related to GAT.
 
-If these differ, then every reported result may already be measuring cross-secret generalization rather than same-secret distinguishing.
+* Verify forward() uses:
 
----
+  x = conv(x, edge_index)
 
-# Tasks
+* Add parameter count assertion utility.
 
-## Part 1 — Inspect Secret Generation
+Expected parameter count:
 
-Trace the entire code path:
+~662,273 parameters
 
-```text
-scripts/generate_dataset.py
-↓
-src/latticeprobe/datasets.py
-↓
-src/latticeprobe/sampler.py
-↓
-any helper modules
-```
+Document paper claim of 18M as inconsistent.
 
-Determine:
+========================================
 
-### How many secrets are generated?
+2. VERIFY TRANSFORMER IMPLEMENTATION
 
-For example:
+Expected architecture:
 
-```text
-One secret per dataset
-One secret per shard
-One secret per sample
-Multiple secrets per dataset
-```
+* d_model=512
+* nhead=8
+* num_layers=8
+* dim_feedforward=2048
+* dropout=0.1
+* norm_first=True
+* batch_first=True
 
-Provide exact code references.
+Required actions:
 
----
+* Verify learnable CLS token exists.
+* Verify CLS token is prepended.
+* Verify h[:,0] corresponds to CLS output.
+* Verify position embeddings correctly handle CLS prepend.
+* Verify initialization includes cls_token.
 
-## Part 2 — Train / Val / Test Semantics
+Expected parameter count:
 
-Determine whether:
+~27.9M
 
-```text
-train
-val
-test
-```
+Add parameter counting utility and automated check.
 
-generated via separate invocations of:
+If code or configs still mention:
 
-```bash
-python scripts/generate_dataset.py ...
-```
+* nhead=12
+* ~51M parameters
 
-will automatically share the same secret.
+replace with explanatory note:
 
-Or whether they generate independent secrets.
+"PAPER INCONSISTENCY: d_model=512 is not divisible by 12. Implementation uses nhead=8."
 
-Provide definitive evidence from the code.
+========================================
 
----
+3. DATASET GENERATION VALIDATION
 
-## Part 3 — Secret Reuse Audit
+Paper requirement:
 
-Answer the following questions:
+train secret != val secret != test secret
 
-### Question A
+Required actions:
 
-Does:
+* Search entire repository for:
+  --secret-file
+  secrets.npy
 
-```bash
-python scripts/generate_dataset.py \
-  --output-dir train
-```
+* Verify validation and test generation never reuse train secret.
 
-always create a fresh secret?
+* Add runtime validation:
 
----
+  assert train_secret_hash != val_secret_hash
+  assert train_secret_hash != test_secret_hash
 
-### Question B
+where applicable.
 
-Can the script reuse an existing secret?
+* If secret reuse is detected:
+  raise RuntimeError
 
-For example:
+========================================
 
-```text
---secret-file
---reuse-secret
-```
+4. TRAINING PIPELINE VALIDATION
 
-or equivalent.
+Verify:
 
----
-
-### Question C
-
-Can a user intentionally generate:
-
-```text
-Train Secret = A
-Val Secret = A
-Test Secret = A
-```
-
-without modifying source code?
-
-If yes, provide commands.
-
-If no, explain why.
-
----
-
-## Part 4 — Current Experimental Regime
-
-Based on the current implementation, determine which regime is actually being used:
-
-### Regime 1
-
-```text
-Single Secret
-Many Samples
-```
-
-### Regime 2
-
-```text
-Different Secret Per Dataset Split
-```
-
-### Regime 3
-
-```text
-Multiple Secrets Per Dataset
-```
-
-### Regime 4
-
-```text
-Fresh Secret Per Sample
-```
-
-Provide evidence.
-
----
-
-## Part 5 — Scientific Consequences
-
-If train/val/test currently use different secrets:
-
-Explain:
-
-```text
-What conclusions remain valid
-What conclusions change
-Which paper tables are affected
-```
-
-Be precise.
-
-Do not speculate.
-
----
-
-## Part 6 — Recommended Fix
-
-If the implementation is scientifically ambiguous:
-
-Propose a minimal fix.
+scripts/train.py
 
 Requirements:
 
-- Backward compatible
-- Reproducible
-- Explicit secret control
-- Suitable for publication
+* Transformer path must not require torch_geometric.
+* LWEGNN import must be lazy.
+* build_model() must import LWEGNN only inside GNN branch.
 
-Examples:
+If any unconditional import exists:
 
-```text
---secret-file
---save-secret
---reuse-secret
+```
+from latticeprobe.models.gnn import LWEGNN
 ```
 
-or similar.
+remove it.
 
-Provide:
+========================================
 
-### Proposed CLI
+5. EVALUATION PIPELINE VALIDATION
 
-### Code Changes Required
+Verify:
 
-### Benefits
+scripts/evaluate.py
 
-### Risks
+Requirements:
 
----
+* Transformer evaluation must work without torch_sparse.
+* LWEGNN import must be lazy.
 
-IMPORTANT
+Move all GNN imports inside GNN-only code paths.
 
-Do not assume intended behavior.
+========================================
 
-Report only what the source code actually does.
+6. NOTEBOOK REPRODUCIBILITY
+
+Audit:
+
+notebooks/
+notebook/
+
+Required:
+
+* train_dir
+* val_dir
+* test_dir
+
+must be defined before preflight checks.
+
+Training cells must explicitly use:
+
+```
+--batch-size 32
+```
+
+when running transformer on T4.
+
+Add explanatory comments documenting memory calculations.
+
+========================================
+
+7. CHECKPOINT COMPATIBILITY SAFETY
+
+Add architecture fingerprinting.
+
+Checkpoint should store:
+
+{
+"architecture_version": "...",
+"model_type": "...",
+"args": ...
+}
+
+During loading:
+
+* Reject incompatible checkpoints.
+* Detect old GAT checkpoints.
+* Detect pre-CLS transformer checkpoints.
+
+Raise informative error:
+
+"Checkpoint was trained before architecture reconciliation and must be retrained."
+
+========================================
+
+8. DOCUMENTATION RECONCILIATION
+
+Update:
+
+README.md
+docs/*
+notebooks markdown cells
+
+Ensure documentation states:
+
+Transformer:
+~27.9M parameters
+
+GNN:
+~0.66M parameters
+
+Add section:
+
+"Paper inconsistencies"
+
+including:
+
+* nhead=12 impossible for d_model=512
+* transformer 51M claim inconsistent
+* GNN 18M claim inconsistent
+* CLS pooling unspecified
+* FFN dimension unspecified
+
+========================================
+
+9. AUTOMATED CONSISTENCY TESTS
+
+Create tests that verify:
+
+test_transformer_parameter_count()
+
+test_gnn_parameter_count()
+
+test_cls_token_present()
+
+test_disjoint_secret_generation()
+
+test_lazy_gnn_import_train()
+
+test_lazy_gnn_import_eval()
+
+test_sequence_lengths()
+
+Expected sequence lengths:
+
+ML-KEM-512:
+768 → 769 with CLS
+
+ML-KEM-768:
+1024 → 1025
+
+ML-KEM-1024:
+1280 → 1281
+
+========================================
+
+10. OPEN ISSUES TO FLAG
+
+Do NOT attempt speculative fixes.
+
+Leave TODO markers for:
+
+* Sections 8–10 of Lattice_Probe_Experiments.ipynb if they remain placeholders.
+* Any paper omission that cannot be reconstructed from the PDF.
+
+Mark them as:
+
+OPEN ISSUE
+
+========================================
+
+DELIVERABLES
+
+Return:
+
+1. Unified diff of every modified file.
+2. REPORT.md
+3. List of checkpoints that must be retrained.
+4. Results of all consistency tests.
+5. Final statement indicating whether repository is:
+
+* PAPER CONSISTENT
+* IMPLEMENTATION CONSISTENT
+* REPRODUCIBLE
+
+with justification.

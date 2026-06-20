@@ -85,6 +85,9 @@ def build_model(model_name: str, params, device: torch.device, args=None) -> nn.
                 dim_feedforward=getattr(args, "ff_dim", 2048),
             )
         return LWETransformer(params, **kwargs).to(device)
+    # Lazy import: torch_geometric.nn (required by LWEGNN) needs torch_sparse
+    # compiled for the exact CUDA version — only load when actually training GNN.
+    from latticeprobe.models.gnn import LWEGNN
     kwargs = {}
     if args is not None:
         kwargs = dict(
@@ -137,18 +140,23 @@ def run_epoch(
     all_labels: list[np.ndarray] = []
 
     ctx = torch.enable_grad() if training else torch.no_grad()
+    scaler = torch.amp.GradScaler('cuda') if training and device.type == 'cuda' else None
+
     with ctx:
         for batch in loader:
             if model_name == "transformer":
                 tokens, labels = batch
                 tokens = tokens.to(device)
                 labels = labels.float().to(device).unsqueeze(1)   # (B,1)
-                logits = model(tokens)                             # (B,1)
+                
+                with torch.autocast(device_type=device.type, dtype=torch.bfloat16 if device.type=='cpu' else torch.float16):
+                    logits = model(tokens)                             # (B,1)
             else:
                 data, labels = batch
                 data   = data.to(device)
                 labels = labels.float().to(device).reshape(-1, 1) # (B,1)
-                logits = model(data)                               # (B,1)
+                with torch.autocast(device_type=device.type, dtype=torch.bfloat16 if device.type=='cpu' else torch.float16):
+                    logits = model(data)                               # (B,1)
 
             if training and shuffle_labels:
                 idx = torch.randperm(labels.size(0))
@@ -158,9 +166,16 @@ def run_epoch(
 
             if training:
                 optimizer.zero_grad()
-                loss.backward()
-                nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-                optimizer.step()
+                if scaler is not None:
+                    scaler.scale(loss).backward()
+                    scaler.unscale_(optimizer)
+                    nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+                    scaler.step(optimizer)
+                    scaler.update()
+                else:
+                    loss.backward()
+                    nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+                    optimizer.step()
 
             n = labels.shape[0]
             total_loss += loss.item() * n
@@ -240,6 +255,8 @@ def train(args) -> Path:
         if epoch % args.ckpt_every == 0:
             ckpt = out_dir / f"ckpt_epoch{epoch:03d}.pt"
             torch.save({
+                "architecture_version": "v2-reconciled",
+                "model_type": args.model,
                 "epoch": epoch, "val_auroc": val_auroc,
                 "model_state": model.state_dict(),
                 "optimizer_state": optimizer.state_dict(),
@@ -251,6 +268,8 @@ def train(args) -> Path:
             best_auroc    = val_auroc
             patience_left = args.patience
             torch.save({
+                "architecture_version": "v2-reconciled",
+                "model_type": args.model,
                 "epoch": epoch, "val_auroc": val_auroc,
                 "model_state": model.state_dict(),
                 "args": vars(args),
@@ -273,7 +292,7 @@ def train(args) -> Path:
             print(f"Early stopping at epoch {epoch} (patience={args.patience})")
             break
 
-    print(f"Best val AUROC: {best_auroc:.4f}  →  {best_ckpt}")
+    print(f"Best val AUROC: {best_auroc:.4f}  ->  {best_ckpt}")
     if wandb_run is not None:
         wandb_run.finish()
     return best_ckpt
@@ -292,8 +311,9 @@ if __name__ == "__main__":
     from torch.utils.data import DataLoader
 
     from latticeprobe.datasets import LWEGraphDataset, LWESequenceDataset
-    from latticeprobe.models.gnn import LWEGNN
     from latticeprobe.models.transformer import LWETransformer
+    # LWEGNN is imported lazily inside build_model to avoid requiring torch_sparse
+    # when training the transformer.
 
     # Inject into global namespace for functions to use
     globals().update(locals())

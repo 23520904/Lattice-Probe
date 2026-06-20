@@ -7,16 +7,20 @@ Paper spec:
   - hidden dim = 256
   - Readout: global mean pool → Linear(256, 1)
 
+  PAPER INCONSISTENCY: paper claims ~18M parameters.
+  Actual count for SAGEConv(1→256)×6 + BatchNorm×6 + Linear(256,1): ~662,273.
+  The paper's figure is ~27× too large for the stated architecture.
+
 Input:  bipartite graph from representations.to_graph()
           k·n variable nodes  (normalised a-coefficients)
           n   equation nodes  (normalised b-coefficients)
-          2·k·n undirected edges weighted by a[r,c]/q
+          2·k·n undirected edges (edge_attr stored in graph but NOT used by SAGEConv)
 Output: single binary logit per graph.
 """
 
 import torch
 import torch.nn as nn
-from torch_geometric.nn import GATConv, global_mean_pool
+from torch_geometric.nn import SAGEConv, global_mean_pool
 
 from latticeprobe.params import LWEParams
 
@@ -47,7 +51,10 @@ class LWEGNN(nn.Module):
         self.norms = nn.ModuleList()
         for i in range(num_layers):
             in_ch = in_channels if i == 0 else hidden
-            self.convs.append(GATConv(in_ch, hidden, edge_dim=1))
+            # SAGEConv: mean-aggregation GraphSAGE (paper §4.3).
+            # edge_attr is present in the graph for inspection but GraphSAGE
+            # does not use edge features in its standard formulation.
+            self.convs.append(SAGEConv(in_ch, hidden))
             self.norms.append(nn.BatchNorm1d(hidden))
 
         self.drop = nn.Dropout(p=dropout)
@@ -58,6 +65,10 @@ class LWEGNN(nn.Module):
     def _init_weights(self) -> None:
         nn.init.zeros_(self.head.bias)
 
+    def count_parameters(self) -> int:
+        """Return total trainable parameter count. Expected: ~662,273."""
+        return sum(p.numel() for p in self.parameters() if p.requires_grad)
+
     def forward(self, data) -> torch.Tensor:
         """
         Args:
@@ -65,10 +76,10 @@ class LWEGNN(nn.Module):
         Returns:
             logits: float tensor of shape (B, 1).
         """
-        x, edge_index, edge_attr, batch = data.x, data.edge_index, data.edge_attr, data.batch
+        x, edge_index, batch = data.x, data.edge_index, data.batch
 
         for conv, norm in zip(self.convs, self.norms):
-            x = conv(x, edge_index, edge_attr)
+            x = conv(x, edge_index)   # SAGEConv does not take edge_attr
             x = norm(x)
             x = x.relu()
             x = self.drop(x)

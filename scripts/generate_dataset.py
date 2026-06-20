@@ -42,7 +42,9 @@ def parse_args(argv=None):
     p.add_argument("--num-secrets", type=int, default=1,
                    help="Number of distinct secrets to generate and embed in this dataset")
     p.add_argument("--secret-file", type=str, default=None,
-                   help="Path to an existing secrets.npy file to reuse (enforces same-key across splits)")
+                   help="Path to an existing secrets.npy to load (WARNING: "
+                        "reusing secrets across splits violates paper §5.2 "
+                        "disjoint-key requirement. Use only for ablation studies.)")
     p.add_argument("--noise-scale", type=float, default=1.0,
                    help="Scale multiplier for the noise variance (e.g. 0.90 for 90 percent noise)")
     p.add_argument("--quiet", action="store_true", help="Suppress progress bar")
@@ -102,12 +104,41 @@ def generate_dataset(
 
     bar.close()
     if not quiet:
-        print(f"Wrote {shard_idx} shard(s) ({generated:,} samples) → {out}")
+        print(f"Wrote {shard_idx} shard(s) ({generated:,} samples) -> {out}")
     return out
+
+
+def validate_disjoint_secrets(*secret_paths: str) -> None:
+    """
+    Assert that all provided secrets.npy files contain distinct secrets.
+
+    Paper §5.2 requires disjoint key sets across train/val/test splits.
+    Call this after generating all splits to verify compliance.
+
+    Raises RuntimeError if any two paths contain the same secret bytes.
+    """
+    import hashlib
+    hashes = {}
+    for path in secret_paths:
+        digest = hashlib.sha256(np.load(path).tobytes()).hexdigest()
+        if digest in hashes:
+            raise RuntimeError(
+                f"Secret reuse detected between '{hashes[digest]}' and '{path}'. "
+                "This violates paper §5.2 (disjoint key sets). "
+                "Regenerate splits without --secret-file to get independent secrets."
+            )
+        hashes[digest] = path
 
 
 def main():
     args = parse_args()
+    if args.secret_file is not None:
+        import warnings
+        warnings.warn(
+            "--secret-file reuses a secret across splits, violating paper §5.2 "
+            "(disjoint key sets). Use only for explicit ablation studies.",
+            stacklevel=2,
+        )
     generate_dataset(
         param_set=args.param_set,
         n_samples=args.n_samples,

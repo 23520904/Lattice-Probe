@@ -2,9 +2,9 @@
 PyTorch Dataset wrappers for sharded .npz LWE datasets.
 
 Each shard file must contain:
-  a:     float32, shape (shard_size, k, n)
-  b:     float32, shape (shard_size, n)
-  label: int8,    shape (shard_size,)   — 1=LWE, 0=uniform
+  a:     int16,   shape (shard_size, k, n)   — coefficients in [0, q)
+  b:     int16,   shape (shard_size, n)      — coefficients in [0, q)
+  label: int8,    shape (shard_size,)        — 1=LWE, 0=uniform
 """
 
 from __future__ import annotations
@@ -47,9 +47,9 @@ class LWESequenceDataset(Dataset):
             b_parts.append(d["b"])
             label_parts.append(d["label"])
 
-        self._a = np.concatenate(a_parts, axis=0).astype(np.int64)
-        self._b = np.concatenate(b_parts, axis=0).astype(np.int64)
-        self._labels = np.concatenate(label_parts, axis=0).astype(np.int64)
+        self._a = np.concatenate(a_parts, axis=0)
+        self._b = np.concatenate(b_parts, axis=0)
+        self._labels = np.concatenate(label_parts, axis=0)
 
     def __len__(self) -> int:
         return len(self._labels)
@@ -96,9 +96,9 @@ class LWEGraphDataset(Dataset):
             b_parts.append(d["b"])
             label_parts.append(d["label"])
 
-        self._a = np.concatenate(a_parts, axis=0).astype(np.int64)
-        self._b = np.concatenate(b_parts, axis=0).astype(np.int64)
-        self._labels = np.concatenate(label_parts, axis=0).astype(np.int64)
+        self._a = np.concatenate(a_parts, axis=0)
+        self._b = np.concatenate(b_parts, axis=0)
+        self._labels = np.concatenate(label_parts, axis=0)
 
     def __len__(self) -> int:
         return len(self._labels)

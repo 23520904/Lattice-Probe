@@ -4,7 +4,9 @@ Open-source implementation of the ML-cryptanalysis framework from:
 
 > Ologunde, E. *"AI-Accelerated Cryptanalysis of Lattice-Based Schemes: A Stress-Test of NIST PQC Parameter Choices via Transformer and Graph Neural Network Distinguishers."* 2026.
 
-The paper trains Transformer and GraphSAGE models to distinguish Module-LWE samples from uniform random — a hard problem whose hardness underpins CRYSTALS-Kyber (ML-KEM, FIPS-203). The central finding is that **standardised ML-KEM parameters (512/768/1024) show no exploitable structure** (AUROC ≈ 0.50) even with up to 2²⁰ training samples and ~51M-parameter models, while intentionally weakened regimes are cleanly detected.
+The paper trains Transformer and GraphSAGE models to distinguish Module-LWE samples from uniform random — a hard problem whose hardness underpins CRYSTALS-Kyber (ML-KEM, FIPS-203). The central finding is that **standardised ML-KEM parameters (512/768/1024) show no exploitable structure** (AUROC ≈ 0.50) even with up to 2²⁰ training samples, while intentionally weakened regimes are cleanly detected.
+
+> **Implementation note:** The paper states ~51M parameters for the Transformer and ~18M for the GNN. Both figures are inconsistent with the stated architectures (d_model=512, 8 layers gives ~27.9M; SAGEConv 6-layer gives ~0.66M). See [Paper Inconsistencies](#paper-inconsistencies) below.
 
 ---
 
@@ -119,21 +121,23 @@ logit_g = model_g(batch)                       # (1, 1)
 | Hyperparameter | Value |
 |---|---|
 | Layers | 8 |
-| Attention heads | 8 (paper: 12 — using 8 because 512 % 12 ≠ 0; head_dim = 64) |
+| Attention heads | **8** (PAPER INCONSISTENCY: paper says 12, but 512%12≠0; 8 is the only valid value) |
 | Hidden dim | 512 |
 | FFN dim | 2048 |
 | Dropout | 0.1 |
-| Input | Integer token sequence of length k·n + n |
-| Head | Linear(512, 1) on CLS token |
+| **Parameter count** | **~27.9M** (PAPER INCONSISTENCY: paper claims ~51M) |
+| Input | Integer token sequence of length k·n + n, plus learnable CLS token prepended |
+| Head | Linear(512, 1) on CLS token output (position 0) |
 
 ### GNN (`src/latticeprobe/models/gnn.py`)
 
 | Hyperparameter | Value |
 |---|---|
-| Backbone | GraphSAGE (Hamilton et al., 2017) |
+| Backbone | GraphSAGE / SAGEConv (Hamilton et al., 2017) |
 | Layers | 6 |
 | Hidden dim | 256 |
 | Dropout | 0.1 |
+| **Parameter count** | **~0.66M** (PAPER INCONSISTENCY: paper claims ~18M) |
 | Input | Bipartite graph (k·n + n nodes, 2·k·n edges) |
 | Readout | Global mean pool → Linear(256, 1) |
 
@@ -216,6 +220,22 @@ Every call to `generate_lwe_sample()` and `generate_uniform_sample()` calls `fre
 ### Disjoint key sets
 
 `generate_batch()` generates a single secret `s` shared across all LWE samples in the batch. Callers are responsible for using **different secrets for train vs. test splits** (paper §5.2). Pass `secret=s_train` / `secret=s_test` explicitly.
+
+---
+
+## Paper Inconsistencies
+
+The following discrepancies between the paper and the mathematically valid implementation are documented here. See `SYSTEM_OVERVIEW.md` for full analysis.
+
+| Item | Paper states | Implementation | Reason |
+|------|-------------|----------------|--------|
+| Transformer nhead | 12 | **8** | `d_model=512` is not divisible by 12 (`head_dim` would be non-integer). 8 is the only valid choice. |
+| Transformer params | ~51M | **~27.9M** | d_model=512, 8 layers, ff=2048 yields ~27.9M. Reaching 51M requires ff_dim≈5,000 — not stated. |
+| GNN params | ~18M | **~0.66M** | SAGEConv(1→256)×6 + BatchNorm×6 + Linear(256,1) = 662,273 params (~27× less than claimed). |
+| Transformer CLS token | Not specified | Learnable CLS prepended | Paper says "binary classifier" without specifying readout. BERT-style CLS token is architecturally standard. |
+| FFN inner dim | Not specified | 2048 (= 4 × d_model) | Standard ratio; paper omits this hyperparameter. |
+
+These inconsistencies cannot be resolved without author clarification. The implementation uses the mathematically valid values in all cases.
 
 ---
 

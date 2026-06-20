@@ -67,8 +67,40 @@ def resolve_device(arg: str) -> torch.device:
     return torch.device(arg)
 
 
+def _check_checkpoint_compat(ckpt: dict, model_name: str, path: str) -> None:
+    """
+    Detect checkpoints saved before the v2-reconciled architecture and raise
+    an informative error rather than silently loading corrupted weights.
+
+    Old GAT checkpoints contain keys like 'convs.0.att_src' (GATConv attention).
+    Pre-CLS transformer checkpoints lack 'cls_token' in the state dict.
+    """
+    arch_ver = ckpt.get("architecture_version", None)
+    state = ckpt.get("model_state", {})
+
+    if arch_ver is None:
+        # Pre-v2 checkpoint: inspect state dict for tell-tale keys.
+        if model_name == "gnn":
+            gat_keys = [k for k in state if "att_src" in k or "att_dst" in k or "lin_edge" in k]
+            if gat_keys:
+                raise RuntimeError(
+                    f"Checkpoint '{path}' was trained with GATConv (pre-reconciliation). "
+                    "It is incompatible with the current SAGEConv architecture. "
+                    "Retrain with: python scripts/train.py --model gnn ..."
+                )
+        if model_name == "transformer":
+            if not any("cls_token" in k for k in state):
+                raise RuntimeError(
+                    f"Checkpoint '{path}' predates the CLS-token architecture fix. "
+                    "Position 0 was a content token in this checkpoint; the model "
+                    "architecture has changed and weights are incompatible. "
+                    "Retrain with: python scripts/train.py --model transformer ..."
+                )
+
+
 def load_checkpoint(path: str, model_name: str, params, device: torch.device):
     ckpt = torch.load(path, map_location=device, weights_only=False)
+    _check_checkpoint_compat(ckpt, model_name, path)
     saved_args = ckpt.get("args", {})
     if model_name == "transformer":
         model = LWETransformer(
@@ -79,6 +111,7 @@ def load_checkpoint(path: str, model_name: str, params, device: torch.device):
             dim_feedforward=saved_args.get("ff_dim", 2048),
         )
     else:
+        from latticeprobe.models.gnn import LWEGNN
         model = LWEGNN(
             params,
             hidden=saved_args.get("hidden", 256),
@@ -263,8 +296,9 @@ if __name__ == "__main__":
         run_mlp,
     )
     from latticeprobe.datasets import LWEGraphDataset, LWESequenceDataset
-    from latticeprobe.models.gnn import LWEGNN
     from latticeprobe.models.transformer import LWETransformer
+    # LWEGNN is imported lazily inside load_checkpoint to avoid requiring
+    # torch_sparse when evaluating the transformer.
 
     results = evaluate_model(
         checkpoint=args.checkpoint,
