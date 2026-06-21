@@ -315,5 +315,15 @@ if __name__ == "__main__":
     if args.output_json:
         out = Path(args.output_json)
         out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text(json.dumps(results, indent=2))
+        
+        def json_converter(obj):
+            if isinstance(obj, np.integer):
+                return int(obj)
+            if isinstance(obj, np.floating):
+                return float(obj)
+            if isinstance(obj, np.ndarray):
+                return obj.tolist()
+            raise TypeError(f"Object of type {obj.__class__.__name__} is not JSON serializable")
+
+        out.write_text(json.dumps(results, indent=2, default=json_converter))
         print(f"Results written to {out}")
