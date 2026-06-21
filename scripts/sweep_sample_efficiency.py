@@ -20,7 +20,10 @@ def main():
         writer = csv.writer(f)
         writer.writerow(["N", "transformer_adv", "chi2_adv", "lr_adv", "mlp_adv"])
     
-    for n in N_list:
+    from tqdm.auto import tqdm
+    pbar = tqdm(N_list, desc="Sample efficiency sweep")
+    for n in pbar:
+        pbar.set_postfix(N=n)
         print(f"\n=============================================")
         print(f"Sweeping N = {n:,} samples")
         print(f"=============================================")

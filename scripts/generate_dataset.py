@@ -18,7 +18,7 @@ import sys
 from pathlib import Path
 
 import numpy as np
-from tqdm import tqdm
+from tqdm.auto import tqdm
 
 # Allow running as a script from any working directory.
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
@@ -92,9 +92,10 @@ def generate_dataset(
 
     generated = 0
     shard_idx = 0
-    bar = tqdm(total=n_samples, unit="samples", desc=param_set, disable=quiet)
+    bar = tqdm(total=n_samples, unit="samples", desc="Generating samples", disable=quiet)
 
     while generated < n_samples:
+        bar.set_description(f"Shard {shard_idx}")
         batch = min(shard_size, n_samples - generated)
         A, B, labels = generate_batch(params, batch, secret=secrets, noise_scale=noise_scale)
         save_shard(str(out / f"shard_{shard_idx:05d}.npz"), A, B, labels)

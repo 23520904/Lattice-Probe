@@ -126,6 +126,8 @@ def run_epoch(
     model_name: str,
     optimizer: AdamW | None = None,
     shuffle_labels: bool = False,
+    epoch: int = 1,
+    epochs: int = 1,
 ) -> tuple[float, float]:
     """
     Run one train (optimizer≠None) or validation epoch.
@@ -142,8 +144,12 @@ def run_epoch(
     ctx = torch.enable_grad() if training else torch.no_grad()
     scaler = torch.amp.GradScaler('cuda') if training and device.type == 'cuda' else None
 
+    from tqdm.auto import tqdm
+    mode_str = "Train" if training else "Val"
+    pbar = tqdm(loader, desc=f"Epoch {epoch}/{epochs} | {mode_str}", leave=False)
+
     with ctx:
-        for batch in loader:
+        for batch in pbar:
             if model_name == "transformer":
                 tokens, labels = batch
                 tokens = tokens.to(device)
@@ -181,6 +187,9 @@ def run_epoch(
             total_loss += loss.item() * n
             all_logits.append(logits.detach().cpu().float().squeeze(1).numpy())
             all_labels.append(labels.detach().cpu().float().squeeze(1).numpy())
+            
+            lr_val = optimizer.param_groups[0]['lr'] if optimizer else 0.0
+            pbar.set_postfix(loss=f"{loss.item():.4f}", lr=f"{lr_val:.2e}")
 
     logits_np = np.concatenate(all_logits)
     labels_np = np.concatenate(all_labels)
@@ -231,8 +240,14 @@ def train(args) -> Path:
 
     for epoch in range(1, args.epochs + 1):
         t0 = time.perf_counter()
-        train_loss, train_auroc = run_epoch(model, train_loader, device, args.model, optimizer, getattr(args, "shuffle_labels", False))
-        val_loss,   val_auroc   = run_epoch(model, val_loader,   device, args.model, None)
+        train_loss, train_auroc = run_epoch(
+            model, train_loader, device, args.model, optimizer, getattr(args, "shuffle_labels", False),
+            epoch=epoch, epochs=args.epochs
+        )
+        val_loss,   val_auroc   = run_epoch(
+            model, val_loader,   device, args.model, None,
+            epoch=epoch, epochs=args.epochs
+        )
         scheduler.step()
         elapsed = time.perf_counter() - t0
 
