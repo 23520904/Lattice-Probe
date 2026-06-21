@@ -144,12 +144,8 @@ def run_epoch(
     ctx = torch.enable_grad() if training else torch.no_grad()
     scaler = torch.amp.GradScaler('cuda') if training and device.type == 'cuda' else None
 
-    from tqdm.auto import tqdm
-    mode_str = "Train" if training else "Val"
-    pbar = tqdm(loader, desc=f"Epoch {epoch}/{epochs} | {mode_str}", leave=False)
-
     with ctx:
-        for batch in pbar:
+        for batch in loader:
             if model_name == "transformer":
                 tokens, labels = batch
                 tokens = tokens.to(device)
@@ -187,9 +183,6 @@ def run_epoch(
             total_loss += loss.item() * n
             all_logits.append(logits.detach().cpu().float().squeeze(1).numpy())
             all_labels.append(labels.detach().cpu().float().squeeze(1).numpy())
-            
-            lr_val = optimizer.param_groups[0]['lr'] if optimizer else 0.0
-            pbar.set_postfix(loss=f"{loss.item():.4f}", lr=f"{lr_val:.2e}")
 
     logits_np = np.concatenate(all_logits)
     labels_np = np.concatenate(all_labels)
@@ -251,12 +244,8 @@ def train(args) -> Path:
         scheduler.step()
         elapsed = time.perf_counter() - t0
 
-        print(
-            f"Epoch {epoch:3d}/{args.epochs}"
-            f"  train_loss={train_loss:.4f}  train_auroc={train_auroc:.4f}"
-            f"  val_loss={val_loss:.4f}  val_auroc={val_auroc:.4f}"
-            f"  {elapsed:.1f}s"
-        )
+        lr_val = scheduler.get_last_lr()[0]
+        print(f"Epoch {epoch}/{args.epochs} | loss={train_loss:.4f} | val_auc={val_auroc:.4f} | lr={lr_val:.2e} | {elapsed:.1f}s")
 
         if wandb_run is not None:
             wandb_run.log({

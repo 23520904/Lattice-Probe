@@ -199,7 +199,7 @@ def bootstrap_auroc(
         aucs = []
         n = len(y_true)
         from tqdm.auto import tqdm
-        for _ in tqdm(range(n_boot), desc="Bootstrap CI", leave=False):
+        for _ in tqdm(range(n_boot), desc="Bootstrap CI"):
             idx = rng.integers(0, n, size=n)
             yt, ys = y_true[idx], y_score[idx]
             if len(np.unique(yt)) < 2:
